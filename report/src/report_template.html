@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AR523 Assignment 2 Report</title>
+<style>
+/*KATEX_CSS*/
+:root { --ink:#1d1d1f; --muted:#5f6368; --line:#d9dce1; --soft:#f5f6f8; --accent:#2457a6; }
+* { box-sizing:border-box; }
+body { margin:0; background:#fff; color:var(--ink); font:10.5pt/1.55 "Inter", "Liberation Sans", sans-serif; }
+main { max-width:780px; margin:0 auto; padding:0 16px; overflow-x:clip; }
+h1 { font-size:21pt; line-height:1.2; margin:0 0 4px; font-weight:700; letter-spacing:-0.01em; }
+h2 { font-size:14pt; margin:26px 0 8px; padding-top:6px; border-top:2px solid var(--ink); break-after:avoid; }
+h2 .n { color:var(--accent); margin-right:6px; }
+h3 { font-size:11pt; margin:16px 0 4px; break-after:avoid; }
+p { margin:6px 0; }
+.sub { color:var(--muted); margin:0 0 14px; }
+.eq { margin:8px 0 2px; padding:6px 0; overflow-x:auto; break-inside:avoid; }
+.eq .katex-display { margin:0; }
+.katex { position:relative; }
+.words { color:var(--muted); margin:2px 0 10px; padding-left:12px; border-left:3px solid var(--line); }
+.words b { color:var(--ink); font-weight:600; }
+table { border-collapse:collapse; width:100%; margin:8px 0 4px; font-size:9.5pt; break-inside:avoid; }
+th, td { border-bottom:1px solid var(--line); padding:5px 7px; text-align:left; vertical-align:top; }
+th { background:var(--soft); font-weight:600; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+tr.key td { font-weight:700; }
+.cap { color:var(--muted); font-size:9pt; text-align:center; margin:2px 0 12px; }
+figure { margin:10px 0 0; break-inside:avoid; }
+.row { display:flex; gap:10px; }
+.row img { width:50%; min-width:0; }
+.row3 img { width:33.33%; }
+img { display:block; max-width:100%; height:auto; }
+.glance { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; margin:10px 0 6px; }
+.glance div { background:var(--soft); border-radius:6px; padding:8px 10px; }
+.glance .v { font-size:15pt; font-weight:700; }
+.glance .l { font-size:8.5pt; color:var(--muted); line-height:1.3; }
+code { font-family:"JetBrains Mono", monospace; font-size:9pt; background:var(--soft); padding:1px 4px; border-radius:3px; }
+pre { font-family:"JetBrains Mono", monospace; font-size:9pt; background:var(--soft); padding:8px 10px; border-radius:6px; overflow-x:auto; margin:6px 0; }
+ul, ol { margin:6px 0; padding-left:20px; }
+li { margin:2px 0; }
+.pb { break-before:page; }
+.note { font-size:9.5pt; color:var(--muted); }
+@media (max-width:600px) { table { display:block; overflow-x:auto; } .row { flex-direction:column; } .row img { width:100%; } .glance { grid-template-columns:repeat(2, 1fr); } }
+@page { size:A4; margin:16mm 15mm 16mm 15mm; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>AR523 Assignment 2: Force-Controlled Writing &amp; Haptic Material Identification</h1>
+<p class="sub">Part B report · Deepak Singh Gariya (D26027) · KUKA iiwa in PyBullet, 1 kHz simulation</p>
+
+<div class="glance">
+  <div><div class="v">0.53 N</div><div class="l">Force RMSE, impedance control<br>"Robot" + circle</div></div>
+  <div><div class="v">0.51 N</div><div class="l">Force RMSE, admittance control<br>"Robot" + circle</div></div>
+  <div><div class="v">3 / 3</div><div class="l">Materials classified correctly<br>K̂ = 179 / 314 / 385 N/m</div></div>
+  <div><div class="v">0.40 N</div><div class="l">Bonus: cursive "robot" (admittance)<br>0.47 N with impedance</div></div>
+</div>
+
+<p>All required results use the default word <b>"Robot"</b> and pattern <b>"circle"</b> with a desired contact force
+of \(F_d = 5\) N. The bonus writes <b>"robot" in cursive</b> and draws the spiral, infinity and heart shapes with the robot.
+Everything in this report is produced by one command:</p>
+<pre>pip install -r requirements.txt
+python main.py --part all          # add --live for the real-time dashboard
+python main.py --part bonus        # bonus only (cursive word + complex shapes)</pre>
+<p class="note">Output folders: <code>outputs/part1</code> shapes · <code>part3</code> impedance writing ·
+<code>part4</code> admittance writing · <code>part5</code> comparison · <code>part6</code> material probing ·
+<code>bonus</code>. The folder names come from the given code; the README part numbers map as
+<code>--part 2</code> impedance, <code>3</code> admittance, <code>4</code> comparison, <code>5</code> materials.</p>
+
+<h3>Notation</h3>
+<p>\(x\) = pen-tip position, \(x_d\) = desired position, \(\dot x\) = velocity, \(q\) = joint angles,
+\(\tau\) = joint torques, \(F_{meas}\) = measured contact force, \(F_d\) (or \(F_{des}\)) = desired force,
+\(K\) = stiffness, \(D\) or \(B\) = damping, \(m\) or \(M\) = mass, \(\Delta t = 1\) ms = simulation step.
+The wall/surface is modelled as in Part A: \(F_{meas} = K_e (x - x_w)\) for \(x &gt; x_w\).
+Part A measures \(x\) <i>into</i> the wall; the code's \(z\) axis points <i>up</i>, so "into the surface" is \(-z\).</p>
+
+<!-- ===================================================================== -->
+<h2><span class="n">1</span>Part 1: Trajectory generation (TODO 1)</h2>
+<p>Each shape is a parametric curve. A parameter \(t\) sweeps once around and gives one point per value
+(120 points; 360 for the spiral). The radius is \(r = \text{scale}/2 = 0.05\) m, so every shape fits in a 10 cm box.</p>
+
+<div class="eq">$$\textbf{Circle:}\quad x = r\cos t,\qquad y = r\sin t,\qquad t\in[0,2\pi]$$</div>
+<div class="eq">$$\textbf{Spiral (3 turns):}\quad \rho = \frac{r\,t}{6\pi},\qquad x=\rho\cos t,\qquad y=\rho\sin t,\qquad t\in[0,6\pi]$$</div>
+<div class="eq">$$\textbf{Infinity (lemniscate of Gerono):}\quad x = r\sin t,\qquad y = r\sin t\cos t$$</div>
+<div class="eq">$$\textbf{Heart:}\quad x = r\sin^3 t,\qquad y = \frac{r}{16}\big(13\cos t - 5\cos 2t - 2\cos 3t - \cos 4t\big)$$</div>
+<p class="words"><b>In words:</b> the spiral's radius grows linearly from 0 to \(r\) over three turns. The figure-eight
+crosses itself at the centre. The heart is the classic parametric heart, scaled by \(r/16\) so it is about 10 cm wide.</p>
+<figure><img src="../outputs/part1/shapes.png" alt="Generated shapes"></figure>
+<p class="cap">Figure 1: The four generated patterns (<code>outputs/part1/shapes.png</code>).</p>
+
+<h3>Moving the pen along a path</h3>
+<p>A whole pen-down stroke is drawn as <b>one smooth motion</b>, not as many stop-and-go pieces.
+The distance travelled along the path, \(s(t)\), follows the same minimum-jerk polynomial the given
+<code>MinJerkTrajectory</code> uses:</p>
+<div class="eq">$$s(t) = L\,(10\tau^3 - 15\tau^4 + 6\tau^5),\qquad \tau = \frac{t}{T},\qquad T = \frac{L}{v}$$</div>
+<div class="eq">$$\dot s(t) = \frac{L}{T}\,(30\tau^2 - 60\tau^3 + 30\tau^4)$$</div>
+<div class="eq">$$x_d(t) = \text{path point at arc length } s(t),\qquad \dot x_d(t) = \dot s(t)\,\hat u$$</div>
+<p class="words"><b>In words:</b> \(L\) is the stroke length, \(v = 4\) cm/s is the writing speed and \(\hat u\) is the unit
+direction of the current path segment. The pen starts and stops at rest with no jumps in velocity or acceleration.
+A stroke is cut only where the path turns by more than 30° (\(\hat u_i\cdot\hat u_{i+1} &lt; \cos 30^\circ\)),
+because at a real corner the pen must stop. Block letters stop at their corners; circles and cursive are drawn in one motion.</p>
+
+<!-- ===================================================================== -->
+<h2><span class="n">2</span>Part 2: Cartesian impedance control (TODO 2)</h2>
+<h3>Control law (same as Part A(a))</h3>
+<div class="eq">$$e_x = x_d - x,\qquad \dot e_x = \dot x_d - \dot x$$</div>
+<div class="eq">$$F_c = \underbrace{K\,(x_d - x)}_{\text{spring}} + \underbrace{D\,(\dot x_d - \dot x)}_{\text{damper}}$$</div>
+<p>With the robot equation of motion \(m\ddot x = F_c - F_{meas}\), the closed loop becomes a mass-spring-damper:</p>
+<div class="eq">$$m\ddot x + D\dot x + Kx = Kx_d + D\dot x_d - F_{meas}$$</div>
+<p>For the 7-joint arm, the Cartesian force is turned into joint torques with the Jacobian transpose. Coriolis/centrifugal
+and gravity terms are compensated:</p>
+<div class="eq">$$\tau = J^T(q)\,\big[K(x_d - x) + D(\dot x_d - \dot x)\big] + C(q,\dot q)\,\dot q + g(q)$$</div>
+<p class="words"><b>In words:</b> the pen behaves as if it were held by a virtual spring \(K\) and shock absorber \(D\)
+attached to the target point. \(J^T\) maps the force at the pen tip to motor torques, because the power is the same in both
+spaces: \(F^T\dot x = F^T J\dot q = \tau^T\dot q \Rightarrow \tau = J^T F\).
+\(g(q)\) cancels the weight of the arm and pen, so the spring only has to do the task.</p>
+
+<h3>How each term is computed</h3>
+<ul>
+<li><b>Six dimensions.</b> \(F_c\) has 3 forces and 3 torques; \(K\) and \(D\) are diagonal (one value per axis).</li>
+<li><b>Orientation error.</b> Orientations cannot be subtracted like positions, so the quaternion helper in <code>utils.py</code> is used:
+\(q_{err} = q_{cur}\otimes q_{des}^{-1}\) (sign flipped if \(w&lt;0\)), \(e_{rot} = 2\,(x_{err}, y_{err}, z_{err}) \approx \theta\,\hat n\).
+The torque is \(-K_{rot}\,e_{rot} - D_{rot}\,\omega\).</li>
+<li><b>Damping from a damping ratio.</b> The same \(\zeta\) relation as Part A(d), with the arm's effective mass
+\(m = 2\) kg (0.05 kg·m² for rotation):
+$$D = 2\,\zeta\,\sqrt{K\,m}\qquad\Longleftrightarrow\qquad \zeta = \frac{D}{2\sqrt{K m}}$$</li>
+<li><b>\(C(q,\dot q)\dot q\) and \(g(q)\)</b> come from PyBullet inverse dynamics:
+\(g(q) = \mathrm{ID}(q, 0, 0)\) plus the tool weight \(J^T[0,0,m_{tool}g]\) (given <code>gravity_compensation</code>), and
+\(C(q,\dot q)\dot q = \mathrm{ID}(q,\dot q,0) - \mathrm{ID}(q,0,0)\).</li>
+<li><b>Damping the velocity <i>error</i></b> \((\dot x_d - \dot x)\), as in the notes, matters. Damping plain \(\dot x\) would resist the
+writing motion itself: with \(D \approx 100\) N·s/m at up to 7.5 cm/s, the pen would trail the path by up to
+\(D\dot x/K \approx 1\) cm.</li>
+</ul>
+
+<h3>Getting 5 N with impedance control (TODO 2, continued)</h3>
+<p>At rest (\(\ddot x = \dot x = 0\)) the closed-loop equation reduces to \(F_{meas} = K(x_d - x)\).
+So the target is placed \(F_d/K_z\) <i>below</i> the surface. A slow integral of the force error adds the rest:</p>
+<div class="eq">$$z_d = z_{touch} - \frac{F_d + F_I}{K_z},\qquad F_I = K_I\int (F_d - F_{meas})\,dt,\qquad K_z = 150\ \text{N/m},\ K_I = 5\ \text{s}^{-1}$$</div>
+<p class="words"><b>In words:</b> \(z_{touch}\) is the height where the pen just touches. A 150 N/m spring placed 3.3 cm
+below the surface pushes with 5 N. But the surface is not perfectly rigid: the pen sinks in a little, and the force becomes
+\(F = F_d\,K_c/(K_z + K_c) \approx 4.2\) N, where \(K_c \approx 750\) N/m is the measured contact stiffness. The integral term
+pushes the target slightly deeper until the average force is exactly 5 N. It only integrates while the pen is touching,
+so it cannot "wind up" in the air. Without it, the RMSE is 0.88 N instead of 0.53 N.</p>
+
+<table>
+<tr><th>Gain set</th><th class="num">x, y (in-plane)</th><th class="num">z (normal)</th><th class="num">rotation</th><th class="num">\(\zeta\)</th></tr>
+<tr><td>Impedance writing</td><td class="num">600 N/m</td><td class="num">150 N/m</td><td class="num">15 N·m/rad</td><td class="num">1.5</td></tr>
+<tr><td>Admittance inner loop / material probe (given)</td><td class="num">600 N/m</td><td class="num">600 N/m</td><td class="num">30 N·m/rad</td><td class="num">1.8</td></tr>
+<tr><td>Pen-up moves (given)</td><td class="num">900 N/m</td><td class="num">900 N/m</td><td class="num">35 N·m/rad</td><td class="num">1.4</td></tr>
+</table>
+<p class="note">The given <code>GAINS_IMPEDANCE</code> is used except that x, y are raised from 150 to 600 N/m. The comment in
+<code>utils.py</code> says impedance should be compliant along the <i>normal</i>. In the plane, the ≈1 N friction force would
+otherwise bend a 150 N/m spring by ≈7 mm, and the letters lost their last strokes.</p>
+
+<!-- ===================================================================== -->
+<h2><span class="n">3</span>Part 3: Admittance control (TODO 3)</h2>
+<h3>Control law (same as Part A(a))</h3>
+<div class="eq">$$M_v\,\ddot x_c + B_v\,\dot x_c = F_{des} - F_{meas},\qquad M_v = 1.5\ \text{kg},\ B_v = 60\ \text{N}\cdot\text{s/m}$$</div>
+<p>The commanded position \(x_c\) is then tracked by a stiff inner position loop (the impedance controller with the
+given 600 N/m gains and \(\dot x_d = 0\) along \(z\)):</p>
+<div class="eq">$$\tau = J^T\big[k_p(x_c - x) - k_d\,\dot x\big] + g(q)$$</div>
+<p class="words"><b>In words:</b> the robot imagines a small mass \(M_v\) on a damper \(B_v\) that is pushed by the force
+error. Too much force pushes this imaginary mass away from the surface; too little lets it sink. A stiff position
+controller then follows it.</p>
+
+<h3>Discrete update every \(\Delta t = 1\) ms (explicit Euler)</h3>
+<div class="eq">$$\ddot x_c = \frac{F_{meas} - F_{des} - B_v\,\dot x_c}{M_v},\qquad \dot x_c \leftarrow \dot x_c + \ddot x_c\,\Delta t,\qquad x_c \leftarrow x_c + \dot x_c\,\Delta t$$</div>
+<div class="eq">$$z_d = z_{touch} - 15\ \text{mm} + x_c,\qquad |\dot x_c| \le 0.08\ \text{m/s},\quad |x_c| \le 0.03\ \text{m}$$</div>
+<p class="words"><b>In words:</b> acceleration → velocity → position, one small step at a time (both values are clipped by the
+given limits). The sign is \(F_{meas} - F_{des}\) here only because the code's \(x_c\) points <i>up</i>, away from the surface
+(Part A's \(x_c\) points into the wall). It is the same law. At rest \(\ddot x_c = \dot x_c = 0\), so
+\(F_{meas} = F_{des}\) exactly. This is the DC gain \(G(0) = 1\) derived in Part A(c), independent of the stiffness.</p>
+
+<h3>Connection to Part A(c)–(e)</h3>
+<p>With the inner loop stiff, the force loop is the Part A transfer function:</p>
+<div class="eq">$$\frac{F_{meas}(s)}{F_{des}(s)} = \frac{K_e}{M_v s^2 + B_v s + K_e},\qquad \omega_n = \sqrt{\frac{K_e}{M_v}},\qquad \zeta = \frac{B_v}{2\sqrt{M_v K_e}}$$</div>
+<p>In the simulation, the "environment" seen by the outer loop is the inner-loop spring \(k_p = 600\) N/m in series with the
+pen–table contact (\(K_c \approx 750\) N/m). The measured value is \(K_e \approx 336\) N/m (from \(600\cdot750/1350 \approx 333\)). So:</p>
+<div class="eq">$$\omega_n = \sqrt{336/1.5} \approx 15\ \text{rad/s},\qquad \zeta = \frac{60}{2\sqrt{1.5\cdot 336}} \approx 1.34$$</div>
+<div class="eq">$$B_{v,crit} = 2\sqrt{M_v K_e} = 2\sqrt{1.5\cdot 336} \approx 45\ \text{N}\cdot\text{s/m}$$</div>
+<p>The given \(B_v = 60\) is exactly the Part A(d) rule for an unknown environment, using the stiffest environment possible here.
+That is a rigid wall, for which the series stiffness can never exceed \(k_p = 600\) N/m:</p>
+<div class="eq">$$B_v \ge 2\sqrt{M_v\,K_{e,max}} = 2\sqrt{1.5\cdot 600} = 60\ \text{N}\cdot\text{s/m}$$</div>
+
+<p>I checked Part A(d) and (e) in the simulation by changing only \(M_v\) and \(B_v\) ("Robot" + circle):</p>
+<table>
+<tr><th class="num">\(M_v\) (kg)</th><th class="num">\(B_v\) (N·s/m)</th><th class="num">\(\zeta\)</th><th class="num">Force RMSE (N)</th><th class="num">Peak (N)</th><th>What happens</th></tr>
+<tr class="key"><td class="num">1.5</td><td class="num">60</td><td class="num">1.34</td><td class="num">0.51</td><td class="num">7.9</td><td>Given values: no ringing</td></tr>
+<tr><td class="num">1.5</td><td class="num">45</td><td class="num">1.00</td><td class="num">0.56</td><td class="num">8.1</td><td>Critical for the nominal \(K_e\); slight overshoot when contact is stiffer</td></tr>
+<tr><td class="num">1.5</td><td class="num">20</td><td class="num">0.45</td><td class="num">0.85</td><td class="num">8.5</td><td>Under-damped: force rings after every landing</td></tr>
+<tr><td class="num">0.15</td><td class="num">60</td><td class="num">4.2</td><td class="num">0.47</td><td class="num">7.7</td><td>Lighter mass reacts faster, still stable</td></tr>
+<tr><td class="num">0.015</td><td class="num">60</td><td class="num">13</td><td class="num">1.07</td><td class="num">8.0</td><td>Too small: the update is unstable and the force stays at ≈6.1 N</td></tr>
+</table>
+<p class="words"><b>Why the last row fails (Part A(e)):</b> the commanded acceleration \(\ddot x_c = (F_{des} - F_{meas} - B_v\dot x_c)/M_v\)
+gets very large when \(M_v\) is small. In discrete time, the velocity update multiplies \(\dot x_c\) by
+\(1 - B_v\Delta t/M_v\) every step, which is stable only if</p>
+<div class="eq">$$\Big|1 - \frac{B_v\,\Delta t}{M_v}\Big| &lt; 1 \quad\Longleftrightarrow\quad M_v &gt; \frac{B_v\,\Delta t}{2} = 0.03\ \text{kg}$$</div>
+<p class="words">With \(M_v = 0.015\) kg the factor is \(-3\), so \(\dot x_c\) flips sign and grows every step. It slams between
+the ±0.08 m/s clip and the force loop never settles. This is the sampling/delay limit described in the notes
+(\(M_v &gt; K_eT^2/7.5\) for the simplified delay model). In this simulation the 1 ms integration step is the first limit reached.
+On a real robot, the inner position loop's finite bandwidth and sensor delays make \(T\) much larger. Combined with a stiff
+environment (\(\Delta F_{meas} = K_e\,\Delta x\)), this is why admittance control struggles on hard surfaces.</p>
+
+<!-- ===================================================================== -->
+<h2><span class="n">4</span>Part 4: Performance metrics and comparison (TODO 4)</h2>
+<div class="eq">$$\text{RMSE} = \sqrt{\frac{1}{N}\sum_{i=1}^{N}\big(F_{meas,i} - F_{d,i}\big)^2}\qquad\text{over all samples with } F_{d,i} &gt; 0$$</div>
+<div class="eq">$$\text{Smoothness} = \frac{1}{N}\sum_{i=1}^{N}\big\lVert \dddot x_i \big\rVert^2,\qquad \dot x = \frac{\Delta x}{\Delta t},\ \ \ddot x = \frac{\Delta \dot x}{\Delta t},\ \ \dddot x = \frac{\Delta \ddot x}{\Delta t}\ \ \text{(central differences)}$$</div>
+<p class="words"><b>In words:</b> RMSE squares each force error, averages them and takes the square root. The result is one
+number in newtons for "how far from 5 N, on average". Squaring makes big errors (impact spikes) count much more than small ones.
+\(F_d &gt; 0\) only while the pen is writing; it becomes 5 N at the moment of first contact (see Section 7). Jerk is the rate
+of change of acceleration, so a smaller mean squared jerk means a smoother motion (unit m²/s⁶).</p>
+
+<h3>Results ("Robot" + circle)</h3>
+<table>
+<tr><th>Metric</th><th class="num">Impedance</th><th class="num">Admittance</th></tr>
+<tr class="key"><td>Force RMSE while writing (N)</td><td class="num">0.53</td><td class="num">0.51</td></tr>
+<tr><td>RMSE excluding the first 0.5 s after each landing (N)</td><td class="num">0.40</td><td class="num">0.28</td></tr>
+<tr><td>Share of the squared error in those first 0.5 s</td><td class="num">55 %</td><td class="num">77 %</td></tr>
+<tr><td>Mean ± std contact force (N)</td><td class="num">4.90 ± 0.52</td><td class="num">5.06 ± 0.51</td></tr>
+<tr><td>Peak force (N)</td><td class="num">6.5</td><td class="num">7.9</td></tr>
+<tr><td>Time within ±0.5 N of 5 N</td><td class="num">73 %</td><td class="num">82 %</td></tr>
+<tr><td>x-y tracking error, mean / max (mm)</td><td class="num">2.1 / 6.5</td><td class="num">2.1 / 6.5</td></tr>
+<tr><td>Path smoothness, mean squared jerk (m²/s⁶)</td><td class="num">2.2 × 10⁴</td><td class="num">7.9 × 10⁴</td></tr>
+<tr><td>Pen-down strokes (landings) · writing time</td><td class="num">9 · 20.4 s</td><td class="num">9 · 20.4 s</td></tr>
+</table>
+
+<figure class="row"><img src="../outputs/part3/part3_impedance_xy_path.png" alt="Impedance path"><img src="../outputs/part4/part4_admittance_xy_path.png" alt="Admittance path"></figure>
+<p class="cap">Figure 2: Traced path, pen-down only. Left: impedance. Right: admittance.</p>
+<figure class="row"><img src="../outputs/part3/part3_impedance_force_tracking.png" alt="Impedance force"><img src="../outputs/part4/part4_admittance_force_tracking.png" alt="Admittance force"></figure>
+<p class="cap">Figure 3: Normal force while writing. Left: impedance. Right: admittance. The gaps are pen-up moves.</p>
+
+<h3>Discussion</h3>
+<p><b>Geometry.</b> Both controllers write a clear "Robot" and a round circle with ≈2 mm mean error. The largest error (6.5 mm)
+is the small tick at the start of the circle. The pen-up jump from the "t" to the circle is 11.5 cm in 0.5 s, and the arm's
+inertia (no \(M(q)\) feed-forward in the control law) leaves the pen a few millimetres behind when it lands.</p>
+<p><b>Impedance.</b> The soft 150 N/m normal spring makes landings gentle (peak 6.5 N), and the integral term brings the mean
+force to 4.90 N. Its remaining error is spread along the strokes: dips and bumps where a stroke starts, stops or turns a corner.
+The arm's acceleration in the plane couples into the soft \(z\) axis.</p>
+<p><b>Admittance.</b> Once the pen has settled, admittance is the better force regulator (0.28 N vs 0.40 N). The virtual
+mass keeps moving until the force error is exactly zero, so it has no steady-state error. Its weak point is the landing: each
+stroke starts with a 15 mm step command through the stiff 600 N/m inner loop, which gives force spikes of up to 7.9 N before
+the outer loop reacts. 77 % of its squared error comes from the first 0.5 s after landings. With only two landings in cursive writing
+(Section 6), its RMSE drops to 0.40 N.</p>
+<p><b>Smoothness.</b> The stiff inner loop of admittance passes contact transients straight into the motion, so its mean
+squared jerk is about 3.5× higher. Triple differentiation of 1 kHz data amplifies small vibrations, so this metric mainly
+reflects the landings.</p>
+<figure class="row"><img src="../outputs/part5/part5_writing_force_rmse.png" alt="RMSE bars"><img src="../outputs/part5/part5_writing_smoothness.png" alt="Smoothness bars"></figure>
+<p class="cap">Figure 4: Part 4 comparison plots (<code>outputs/part5</code>): force RMSE and path smoothness.</p>
+
+<h3>What made the difference</h3>
+<table>
+<tr><th>Version of the impedance writer ("Robot" + circle)</th><th class="num">Force RMSE (N)</th></tr>
+<tr><td>Given gains on all axes, damping on \(\dot x\), stop at every path point</td><td class="num">1.14</td></tr>
+<tr><td>+ stiff in-plane gains, damping on \((\dot x_d - \dot x)\), one smooth motion per stroke</td><td class="num">0.77</td></tr>
+<tr><td>+ the stroke starts only once the pen touches the paper (Section 7)</td><td class="num">0.53</td></tr>
+<tr><td>Same as above but without the integral term (\(K_I = 0\))</td><td class="num">0.88</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2><span class="n">5</span>Part 5: Haptic material identification (TODO 5–6)</h2>
+<p>The probe presses \(d_{cmd} = 10\) mm past the point of first contact with the given 600 N/m impedance gains, and records the
+force \(F_i\) against the depth \(d_i\). The stiffness is the slope of the best straight line through the origin, \(F = K d\):</p>
+<div class="eq">$$E(K) = \sum_i (F_i - K d_i)^2,\qquad \frac{dE}{dK} = -2\sum_i d_i\,(F_i - K d_i) = 0\quad\Longrightarrow\quad \hat K = \frac{\sum_i d_i F_i}{\sum_i d_i^2}$$</div>
+<div class="eq">$$\text{class} = \begin{cases}\text{soft} &amp; \hat K &lt; 250\ \text{N/m}\\ \text{medium} &amp; 250 \le \hat K &lt; 350\ \text{N/m}\\ \text{hard} &amp; \hat K \ge 350\ \text{N/m}\end{cases}$$</div>
+<p class="words"><b>In words:</b> press, record force against depth, and pick the slope that makes the squared distance of all
+points to the line as small as possible. The thresholds are <code>MATERIAL_CLASS_THRESHOLDS</code> from <code>utils.py</code>.
+As in the given code, \(d_i\) is the <i>commanded</i> depth.</p>
+
+<h3>The series-compliance effect</h3>
+<p>The robot is not rigid: it is a 600 N/m virtual spring \(K_r\) pressing on a pad of stiffness \(K_e\). Two springs in
+series carry the same force:</p>
+<div class="eq">$$F = K_r\,(d_{cmd} - d_{act}) = K_e\,d_{act}\quad\Longrightarrow\quad d_{act} = \frac{K_r}{K_r + K_e}\,d_{cmd}$$</div>
+<div class="eq">$$\Longrightarrow\quad F = \underbrace{\frac{K_r K_e}{K_r + K_e}}_{\hat K}\,d_{cmd}$$</div>
+<div class="eq">$$\frac{1}{\hat K} = \frac{1}{K_r} + \frac{1}{K_e},\qquad \hat K &lt; K_r = 600\ \text{N/m always},\qquad K_e = \frac{K_r\,\hat K}{K_r - \hat K}\ \ \text{(inverse)}$$</div>
+
+<table>
+<tr><th>Pad</th><th class="num">\(K_e\) param (N/m)</th><th class="num">\(\hat K\) (N/m)</th><th class="num">\(F_{ss}\) (N)</th><th class="num">\(d_{act}\) (mm)</th><th class="num">Robot deflection (mm)</th><th class="num">\(F/(d_{cmd}-d_{act})\)</th><th class="num">\(F/d_{act}\)</th><th class="num">Series prediction</th><th>Class</th></tr>
+<tr><td>A</td><td class="num">300</td><td class="num"><b>179</b></td><td class="num">1.76</td><td class="num">7.1</td><td class="num">2.9</td><td class="num">600</td><td class="num">250</td><td class="num">176</td><td>soft ✓</td></tr>
+<tr><td>B</td><td class="num">1200</td><td class="num"><b>314</b></td><td class="num">3.15</td><td class="num">4.7</td><td class="num">5.3</td><td class="num">600</td><td class="num">665</td><td class="num">315</td><td>medium ✓</td></tr>
+<tr><td>C</td><td class="num">4000</td><td class="num"><b>385</b></td><td class="num">3.87</td><td class="num">3.6</td><td class="num">6.4</td><td class="num">600</td><td class="num">1088</td><td class="num">387</td><td>hard ✓</td></tr>
+</table>
+<p class="cap">\(d_{cmd} = 10\) mm for every pad. Steady-state values are averaged over the last 2 s.
+"Series prediction" = \(K_rK_e/(K_r+K_e)\) with \(K_e = F/d_{act}\).</p>
+
+<p><b>Observations.</b> All three pads are classified correctly. \(F/(d_{cmd}-d_{act}) = 600\) N/m for every pad, which confirms
+the series model exactly. Putting the measured pad stiffness into \(K_rK_e/(K_r+K_e)\) reproduces \(\hat K\) to within 2 %.</p>
+<p><b>Consequence.</b> \(\hat K\) can never exceed \(K_r = 600\) N/m, and it flattens out as the pad gets harder. A 13× spread
+in the pad parameter (300 → 4000) becomes only a 2.1× spread in \(\hat K\) (179 → 385). This is why the class thresholds
+(250, 350 N/m) are far below the nominal pad values, and why a pad harder than C would be almost impossible to tell apart from
+it. For hard materials, the robot's own softness dominates the measurement. (The actual-depth values 250/665/1088 N/m are lower than
+the PyBullet parameters because its soft-contact model, with the tool's own contact stiffness and damping, is not an ideal
+spring. The ordering is preserved.)</p>
+<p><b>Remedies.</b> Fit against the <i>actual</i> penetration from forward kinematics (gives 250 / 665 / 1088 N/m), invert the
+series formula \(K_e = K_r\hat K/(K_r - \hat K)\) (gives 256 / 659 / 1076 N/m), or probe with a much stiffer controller. The
+short spike at first contact in Figure 5 is the impact; a slower approach would reduce it.</p>
+<figure class="row row3"><img src="../outputs/part6/sample_A_loading_curve.png" alt="Sample A"><img src="../outputs/part6/sample_B_loading_curve.png" alt="Sample B"><img src="../outputs/part6/sample_C_loading_curve.png" alt="Sample C"></figure>
+<p class="cap">Figure 5: Probe force vs time for pads A (soft), B (medium) and C (hard).</p>
+
+<!-- ===================================================================== -->
+<h2><span class="n">6</span>Bonus: cursive writing and complex shapes</h2>
+<h3>Cursive "robot"</h3>
+<p>Each lowercase letter is a handful of control points in a unit box (baseline 0, small letters up to 0.5, tall letters up
+to 1). Each letter begins where the previous one ended, so the whole word is one chain of points. A <b>Catmull–Rom spline</b>
+draws a smooth curve that passes exactly through every point:</p>
+<div class="eq">$$p(t) = \tfrac12\Big[\,2p_1 + (p_2 - p_0)\,t + (2p_0 - 5p_1 + 4p_2 - p_3)\,t^2$$</div>
+<div class="eq">$$\qquad\qquad + \,(3p_1 - p_0 - 3p_2 + p_3)\,t^3\Big],\qquad t\in[0,1]$$</div>
+<p class="words"><b>In words:</b> between every pair of points \(p_1 \to p_2\), the curve uses the neighbours \(p_0\) and
+\(p_3\) to set its direction, so the joins have no kinks. The end points are repeated so the curve reaches them; 12 samples are
+taken per segment. The pen never lifts inside the word. The cross of the "t" is added afterwards as a short separate stroke, as in
+real handwriting. Only the letters r, o, b and t are defined (enough for "robot"); other letters raise a clear error. The path is
+then drawn with the same minimum-jerk path timing (Section 1) and the same controllers.</p>
+
+<table>
+<tr><th>Metric</th><th class="num">Cursive, impedance</th><th class="num">Cursive, admittance</th></tr>
+<tr class="key"><td>Force RMSE while writing (N)</td><td class="num">0.47</td><td class="num">0.40</td></tr>
+<tr><td>RMSE excluding 0.5 s after each landing (N)</td><td class="num">0.45</td><td class="num">0.30</td></tr>
+<tr><td>Mean ± std force (N) · peak (N)</td><td class="num">4.98 ± 0.47 · 6.3</td><td class="num">5.03 ± 0.39 · 6.5</td></tr>
+<tr><td>Landings · time within ±0.5 N</td><td class="num">2 · 76 %</td><td class="num">2 · 84 %</td></tr>
+<tr><td>x-y tracking error, mean / max (mm)</td><td class="num">2.0 / 5.0</td><td class="num">1.8 / 5.1</td></tr>
+<tr><td>Path smoothness (m²/s⁶)</td><td class="num">9.3 × 10³</td><td class="num">1.2 × 10⁴</td></tr>
+</table>
+<figure class="row"><img src="../outputs/bonus/cursive_impedance_xy_path.png" alt="Cursive impedance"><img src="../outputs/bonus/cursive_admittance_xy_path.png" alt="Cursive admittance"></figure>
+<p class="cap">Figure 6: Cursive "robot", traced path. Left: impedance. Right: admittance.</p>
+<figure class="row"><img src="../outputs/bonus/cursive_impedance_force_tracking.png" alt="Cursive impedance force"><img src="../outputs/bonus/cursive_admittance_force_tracking.png" alt="Cursive admittance force"></figure>
+<p class="cap">Figure 7: Cursive "robot", normal force. Left: impedance. Right: admittance.</p>
+<p>The word needs only 2 landings instead of 9, so both controllers spend almost all their time in steady writing. Admittance
+benefits most (0.51 → 0.40 N), because its weakness is the landing. The remaining ripple appears where the curve turns sharply
+(tops of the loops), because the friction force changes direction there.</p>
+
+<h3>Complex shapes drawn by the robot</h3>
+<p>The Part 1 spiral, infinity and heart curves are also written on the table with impedance control. Each one is a single
+smooth stroke with one landing:</p>
+<table>
+<tr><th>Shape</th><th class="num">Force RMSE (N)</th><th class="num">Path smoothness (m²/s⁶)</th></tr>
+<tr><td>Spiral (3 turns)</td><td class="num">0.19</td><td class="num">2.1 × 10³</td></tr>
+<tr><td>Infinity</td><td class="num">0.24</td><td class="num">3.7 × 10³</td></tr>
+<tr><td>Heart (two cusps)</td><td class="num">0.25</td><td class="num">3.8 × 10³</td></tr>
+</table>
+<figure class="row row3"><img src="../outputs/bonus/shape_spiral_xy_path.png" alt="Spiral"><img src="../outputs/bonus/shape_infinity_xy_path.png" alt="Infinity"><img src="../outputs/bonus/shape_heart_xy_path.png" alt="Heart"></figure>
+<p class="cap">Figure 8: Spiral, infinity and heart traced by the robot (impedance control).</p>
+
+<!-- ===================================================================== -->
+<h2><span class="n">7</span>Live dashboard (TODO 7) and changes to the given code</h2>
+<h3>Live dashboard</h3>
+<p>With <code>--live</code>, a matplotlib window (<code>plt.ion()</code>, Tk backend) opens next to the simulation. In writing
+mode it shows the desired vs actual path (pen-down only) and the desired vs measured force over time. In probing mode it shows the
+loading curve (force vs commanded depth) and, at the end, the fitted line \(F = \hat K d\). It redraws at most 20 times per
+second so the 1 kHz simulation is not slowed down. When it closes, the last frame is saved as <code>*_dashboard.png</code>.
+On a machine without a display, it falls back to drawing off-screen and still saves the file.</p>
+<figure><img src="../outputs/part4/part4_admittance_dashboard.png" alt="Writing dashboard"></figure>
+<p class="cap">Figure 9: Last frame of the live dashboard (admittance writing). Dashed = desired, solid = actual.</p>
+
+<h3>Changes outside the TODO blocks</h3>
+<p><code>utils.py</code> is not modified. In <code>main.py</code>:</p>
+<ul>
+<li><b><code>main()</code>:</b> the part dispatch called functions that do not exist (<code>run_part3_admittance</code>,
+<code>run_part5</code>) or passed wrong arguments. Fixed, and <code>--part bonus</code> added. Part 4 reuses the Part 2/3 results
+instead of simulating them again.</li>
+<li><b><code>build_stroke_plan</code>:</b> the pattern was shifted +0.5 m in x, which is off the table (the table spans
+x = 0.3–0.7 m). It is now drawn 8 cm below the word. Strokes are kept as whole polylines and cut only at sharp corners
+(Section 1). Cursive words come from <code>get_cursive_strokes()</code>.</li>
+<li><b><code>run_writing_task</code>:</b>
+  <ul>
+  <li>Pen-down strokes follow <code>PathTrajectory</code> (Section 1), and \(\dot x_d\) is passed to the controller.</li>
+  <li>The 0.15 s landing approach is now logged. Before, time stood still while the pen moved 3 cm, which corrupted the
+  jerk metric.</li>
+  <li><b>A stroke starts at first contact.</b> The given 0.15 s approach often ends 1.5–11 mm above the paper. Before this
+  change, the pen started moving sideways in the air, so the beginning of each stroke was missing and those samples counted as
+  5 N errors. Now the pen waits at the stroke start until it touches (1 s safety timeout), and \(F_d\) becomes 5 N at that moment.</li>
+  </ul></li>
+<li><b><code>CartesianImpedanceController.step</code>:</b> optional <code>vel_des</code> argument for \(\dot x_d\) (default zero).</li>
+<li><b><code>probe_material</code>:</b> the live loading curve uses the commanded depth, the same as the fit, so the fitted
+line lies over the data. The dashboard frame is saved.</li>
+</ul>
+
+</main>
+</body>
+</html>
