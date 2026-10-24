@@ -7,7 +7,7 @@ Completed solution for [AR523-Assignment2-ForceControl](https://github.com/laksh
 | `main.py` | Completed code (all 8 TODOs + bonus cursive writing) |
 | `utils.py` | Given infrastructure, **unmodified** |
 | `outputs/` | All generated figures and JSON results (default word "Robot", pattern "circle") |
-| `report/Report.pdf` | Written report (also `Report.html`; source in `report/src/`) |
+| `report/Report.pdf` | Written report (also editable `Report.docx` and `Report.html`; source in `report/src/`) |
 | `partA/PartA_Handwritten.pdf` | Handwritten Part A derivations |
 
 ## Run
@@ -32,4 +32,5 @@ python main.py --part bonus          # cursive "robot" + spiral/infinity/heart
 
 Material identification: K̂ = 179 / 314 / 385 N/m → soft / medium / hard (3/3 correct).
 
-To rebuild the report: `npm install katex@0.16.11 playwright`, then `node report/src/build_report.js`.
+To rebuild the report: `npm install katex@0.16.11 playwright`, then `node report/src/build_report.js` (PDF + HTML)
+and `python report/src/build_docx.py` (Word file with editable equations; needs pandoc and lxml).
